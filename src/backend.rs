@@ -49,7 +49,10 @@ fn wait_capped(
     }
 }
 
+// The RLIMIT_* constants are `c_int` on macOS but `__rlimit_resource_t` (`c_uint`) on
+// Linux glibc; the `as u32` on each is load-bearing on macOS and a no-op on Linux.
 #[cfg(unix)]
+#[allow(clippy::unnecessary_cast)]
 fn install_rlimits(
     cmd: &mut Command,
     policy: &Policy,
@@ -60,8 +63,6 @@ fn install_rlimits(
     let (cpu, mem, pids) = (policy.cpu_seconds, policy.memory_mb, policy.max_pids);
     unsafe {
         cmd.pre_exec(move || {
-            // the RLIMIT_* constants are `c_int` on macOS and `__rlimit_resource_t`
-            // (a `c_uint`) on Linux glibc -- take u32 and let `as _` coerce at the call.
             let set = |res: u32, v: u64| {
                 let lim = libc::rlimit {
                     rlim_cur: v,
