@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "zecor-sandbox"
+description = "Cross-platform process isolation for untrusted test execution: one policy, Landlock/seccomp on Linux, sandbox-exec on macOS, Job Objects on Windows."
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+authors = ["Hilachem Ventures LLC"]
+repository = "https://github.com/zecordev/zecor-sandbox"
+rust-version = "1.75"
+
+[lib]
+name = "zecor_sandbox"
+path = "src/lib.rs"
+
+[[bin]]
+name = "zecor-sandbox"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+landlock = "0.4"
+seccompiler = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_System_JobObjects", "Win32_System_Threading", "Win32_Foundation", "Win32_Security"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
