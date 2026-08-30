@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! CLI-level checks for `--dry-run` and `--audit`.
+//! CLI-level checks for `--dry-run` and `--audit`. Unix-only: they drive `/bin/sh`.
+#![cfg(unix)]
 
 use std::process::Command;
 

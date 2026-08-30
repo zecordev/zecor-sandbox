@@ -194,7 +194,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod run_tests {
     use super::*;
 
@@ -207,7 +207,6 @@ mod run_tests {
     }
 
     #[test]
-    #[cfg(unix)]
     fn allows_a_write_inside_the_workdir_and_denies_outside() {
         let d = tempfile::TempDir::new().unwrap();
         let r = sh("echo x > inside.txt && test -f inside.txt", d.path());
@@ -220,7 +219,6 @@ mod run_tests {
     }
 
     #[test]
-    #[cfg(unix)]
     fn wall_clock_cap_kills_a_hang() {
         let d = tempfile::TempDir::new().unwrap();
         let p = Policy {
