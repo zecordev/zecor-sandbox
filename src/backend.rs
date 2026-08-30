@@ -60,24 +60,26 @@ fn install_rlimits(
     let (cpu, mem, pids) = (policy.cpu_seconds, policy.memory_mb, policy.max_pids);
     unsafe {
         cmd.pre_exec(move || {
-            let set = |res: libc::c_int, v: u64| {
+            // the RLIMIT_* constants are `c_int` on macOS and `__rlimit_resource_t`
+            // (a `c_uint`) on Linux glibc -- take u32 and let `as _` coerce at the call.
+            let set = |res: u32, v: u64| {
                 let lim = libc::rlimit {
                     rlim_cur: v,
                     rlim_max: v,
                 };
-                libc::setrlimit(res, &lim);
+                libc::setrlimit(res as _, &lim);
             };
             if let Some(s) = cpu {
-                set(libc::RLIMIT_CPU, s);
+                set(libc::RLIMIT_CPU as u32, s);
             }
             if let Some(mb) = mem {
-                set(libc::RLIMIT_AS, mb * 1024 * 1024);
+                set(libc::RLIMIT_AS as u32, mb * 1024 * 1024);
             }
             #[cfg(target_os = "linux")]
             {
                 libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
                 if let Some(p) = pids {
-                    set(libc::RLIMIT_NPROC, p);
+                    set(libc::RLIMIT_NPROC as u32, p);
                 }
                 if netns {
                     libc::unshare(libc::CLONE_NEWNET);
@@ -100,7 +102,9 @@ fn apply_landlock(
     reads: &[std::path::PathBuf],
     writes: &[std::path::PathBuf],
 ) -> anyhow::Result<()> {
-    use landlock::{AccessFs, PathBeneath, PathFd, Ruleset, RulesetAttr, RulesetCreatedAttr, ABI};
+    use landlock::{
+        Access, AccessFs, PathBeneath, PathFd, Ruleset, RulesetAttr, RulesetCreatedAttr, ABI,
+    };
     let abi = ABI::V2;
     let mut created = Ruleset::default()
         .handle_access(AccessFs::from_all(abi))?
