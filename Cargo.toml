@@ -34,7 +34,7 @@ windows-sys = { version = "0.59", features = ["Win32_System_JobObjects", "Win32_
 
 [dev-dependencies]
 tempfile = "3"
-criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 
 [[bench]]
 name = "sandbox"
