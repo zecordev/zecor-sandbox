@@ -37,7 +37,7 @@ jobs:
           ext=""; [ "${{ runner.os }}" = "Windows" ] && ext=".exe"
           mkdir dist
           cp "target/${{ matrix.target }}/release/${bin}${ext}" "dist/${bin}-${{ matrix.target }}${ext}"
-          (cd dist && shasum -a 256 ./* > "${bin}-${{ matrix.target }}.sha256")
+          (cd dist && sha256sum ./* > "${bin}-${{ matrix.target }}.sha256")
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}
