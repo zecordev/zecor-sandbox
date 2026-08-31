@@ -64,7 +64,13 @@ fn install_rlimits(
     // Build the seccomp program *before* fork (it allocates); apply it in `pre_exec`.
     #[cfg(target_os = "linux")]
     let seccomp_bpf: Option<seccompiler::BpfProgram> = if policy.seccomp {
-        seccomp::build()
+        match seccomp::build() {
+            Ok(b) => Some(b),
+            Err(e) => {
+                eprintln!("zecor-sandbox: seccomp layer skipped: {e}");
+                None
+            }
+        }
     } else {
         None
     };
@@ -142,24 +148,28 @@ mod seccomp {
         ]
     }
 
-    /// The compiled BPF program, or `None` if seccompiler could not build it (e.g. an
-    /// unknown target arch) -- in which case the caller runs without this layer.
-    pub fn build() -> Option<seccompiler::BpfProgram> {
+    /// The compiled BPF program, or an error string if seccompiler could not build it
+    /// (unknown target arch, empty rule set, ...) -- the caller then runs without it.
+    pub fn build() -> Result<seccompiler::BpfProgram, String> {
         use seccompiler::{BpfProgram, SeccompAction, SeccompFilter};
         use std::collections::BTreeMap;
 
         let rules: BTreeMap<i64, Vec<seccompiler::SeccompRule>> =
             denied().into_iter().map(|n| (n, vec![])).collect();
-        let arch = std::env::consts::ARCH.try_into().ok()?;
+        let arch = std::env::consts::ARCH
+            .try_into()
+            .map_err(|e| format!("target arch {:?}: {e:?}", std::env::consts::ARCH))?;
         let filter = SeccompFilter::new(
             rules,
             SeccompAction::Allow,                     // default: allow
             SeccompAction::Errno(libc::EPERM as u32), // on match: -EPERM
             arch,
         )
-        .ok()?;
-        let bpf: BpfProgram = filter.try_into().ok()?;
-        Some(bpf)
+        .map_err(|e| format!("SeccompFilter::new: {e:?}"))?;
+        let bpf: BpfProgram = filter
+            .try_into()
+            .map_err(|e| format!("compile bpf: {e:?}"))?;
+        Ok(bpf)
     }
 }
 

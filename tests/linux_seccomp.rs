@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The seccomp deny-list is Linux-only; probe it with `adjtimex`, which a non-root
-//! process may normally call (mode 0 = read the clock state) but which the deny-list
-//! turns into `EPERM`.
-#![cfg(target_os = "linux")]
+//! The seccomp deny-list is Linux-only; probe it with `keyctl`, which any process may
+//! normally call (KEYCTL_GET_KEYRING_ID returns the process keyring id) but which the
+//! deny-list turns into `EPERM`.
+#![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 
 use std::process::Command;
 
 const BIN: &str = env!("CARGO_BIN_EXE_zecor-sandbox");
 
+// SYS_keyctl = 250 on x86_64. KEYCTL_GET_KEYRING_ID = 0, KEY_SPEC_PROCESS_KEYRING = -2.
 const PROBE: &str = r#"
-import ctypes, ctypes.util, os
-libc = ctypes.CDLL(ctypes.util.find_library("c") or "libc.so.6", use_errno=True)
-buf = (ctypes.c_char * 512)()
-r = libc.adjtimex(buf)
-print("ADJTIMEX_RC", r, os.strerror(ctypes.get_errno()) if r < 0 else "ok")
+import ctypes, os
+libc = ctypes.CDLL(None, use_errno=True)
+r = libc.syscall(250, 0, -2, 0, 0, 0)
+print("KEYCTL_RC", r, os.strerror(ctypes.get_errno()) if r < 0 else "ok")
 "#;
 
 fn have_python3() -> bool {
@@ -24,28 +24,32 @@ fn have_python3() -> bool {
         .unwrap_or(false)
 }
 
-fn run_probe(extra: &[&str]) -> String {
+fn run_probe(extra: &[&str]) -> (String, String) {
     let d = tempfile::TempDir::new().unwrap();
     let mut args = vec!["run", "--workdir", d.path().to_str().unwrap()];
     args.extend_from_slice(extra);
     args.extend_from_slice(&["--", "python3", "-c", PROBE]);
     let out = Command::new(BIN).args(&args).output().unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     assert!(
-        stdout.contains("ADJTIMEX_RC"),
-        "probe produced no result\n--- stdout ---\n{stdout}\n--- stderr ---\n{}",
-        String::from_utf8_lossy(&out.stderr)
+        !stderr.contains("seccomp layer skipped"),
+        "seccomp did not install: {stderr}"
     );
-    stdout
+    assert!(
+        stdout.contains("KEYCTL_RC"),
+        "probe produced no result\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    (stdout, stderr)
 }
 
 #[test]
-fn deny_list_turns_adjtimex_into_eperm() {
+fn deny_list_turns_keyctl_into_eperm() {
     if !have_python3() {
         return;
     }
-    let out = run_probe(&[]);
-    assert!(out.contains("ADJTIMEX_RC -1"), "expected -1, got: {out}");
+    let (out, _) = run_probe(&[]);
+    assert!(out.contains("KEYCTL_RC -1"), "expected -1, got: {out}");
     assert!(
         out.contains("Operation not permitted"),
         "expected EPERM, got: {out}"
@@ -53,14 +57,13 @@ fn deny_list_turns_adjtimex_into_eperm() {
 }
 
 #[test]
-fn no_seccomp_lets_adjtimex_through() {
+fn no_seccomp_lets_keyctl_through() {
     if !have_python3() {
         return;
     }
-    let out = run_probe(&["--no-seccomp"]);
-    // a non-root adjtimex(mode 0) reads the clock state and returns >= 0
+    let (out, _) = run_probe(&["--no-seccomp"]);
     assert!(
-        !out.contains("ADJTIMEX_RC -1"),
-        "adjtimex should succeed without seccomp, got: {out}"
+        !out.contains("KEYCTL_RC -1"),
+        "keyctl should succeed without seccomp, got: {out}"
     );
 }
