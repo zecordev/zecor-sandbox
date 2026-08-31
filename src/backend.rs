@@ -121,7 +121,7 @@ fn install_rlimits(
 /// `perf_event_open` are deliberately *not* here -- sanitizers and profilers use them,
 /// and `NO_NEW_PRIVS` already blunts ptrace's escalation value.
 #[cfg(target_os = "linux")]
-mod seccomp {
+pub(crate) mod seccomp {
     /// Syscalls present in `libc` on both x86_64 and aarch64 Linux.
     fn denied() -> Vec<i64> {
         vec![
@@ -241,6 +241,12 @@ pub fn run(policy: &Policy, argv: &[String]) -> Result<RunResult> {
     let r = wait_capped(child, policy.wall_seconds, "macos:sandbox-exec+rlimit");
     let _ = std::fs::remove_file(&profile);
     r
+}
+
+/// Test-only view of the generated SBPL profile.
+#[cfg(all(test, target_os = "macos"))]
+pub(crate) fn sbpl_for_test(policy: &Policy) -> String {
+    sbpl(policy)
 }
 
 #[cfg(target_os = "macos")]

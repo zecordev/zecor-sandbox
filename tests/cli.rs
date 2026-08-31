@@ -55,5 +55,70 @@ fn audit_file_records_the_outcome() {
     assert_eq!(v["exit_code"], 3);
     assert_eq!(v["timed_out"], false);
     assert_eq!(v["tool"], "zecor-sandbox");
-    assert!(v["policy"]["allow_net"] == false);
+    assert_eq!(v["policy"]["allow_net"], false);
+    assert_eq!(v["policy"]["seccomp"], true);
+    assert_eq!(v["policy"]["memory_mb"], 4096);
+    assert!(v["backend"].as_str().unwrap().len() > 3);
+    assert!(v["started_epoch_s"].as_u64().unwrap() > 0);
+}
+
+#[test]
+fn show_prints_the_resolved_policy() {
+    let d = tempfile::TempDir::new().unwrap();
+    let out = Command::new(BIN)
+        .args(["show", "--workdir", d.path().to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let s = String::from_utf8_lossy(&out.stdout);
+    for token in ["read:", "write:", "net:", "seccomp:", "caps:"] {
+        assert!(s.contains(token), "`show` output missing {token}:\n{s}");
+    }
+    assert!(s.contains("net:   false"));
+}
+
+#[test]
+fn allow_net_flows_through_dry_run_and_show() {
+    let d = tempfile::TempDir::new().unwrap();
+    let wd = d.path().to_str().unwrap();
+
+    let show = Command::new(BIN)
+        .args(["show", "--workdir", wd, "--allow-net"])
+        .output()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&show.stdout).contains("net:   true"));
+
+    let dry = Command::new(BIN)
+        .args([
+            "run",
+            "--workdir",
+            wd,
+            "--allow-net",
+            "--dry-run",
+            "--",
+            "/bin/true",
+        ])
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&dry.stdout).unwrap();
+    assert_eq!(v["policy"]["allow_net"], true);
+}
+
+#[test]
+fn no_seccomp_flag_flows_through_dry_run() {
+    let d = tempfile::TempDir::new().unwrap();
+    let out = Command::new(BIN)
+        .args([
+            "run",
+            "--workdir",
+            d.path().to_str().unwrap(),
+            "--no-seccomp",
+            "--dry-run",
+            "--",
+            "/bin/true",
+        ])
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["policy"]["seccomp"], false);
 }
