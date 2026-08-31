@@ -3,7 +3,8 @@
 //! No process is spawned here -- `run` cost is dominated by fork/exec and the
 //! kernel, not by anything this crate computes.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
 use zecor_sandbox::Policy;
 
 const REALISTIC: &str = "\
