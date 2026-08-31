@@ -38,7 +38,7 @@ jobs:
         run: pipx install zizmor && zizmor --persona=regular .github/workflows
 
   osv-scanner:
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.0.2
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.5.1
     permissions:
       contents: read
       security-events: write
