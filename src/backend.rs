@@ -61,6 +61,13 @@ fn install_rlimits(
 ) {
     use std::os::unix::process::CommandExt;
     let (cpu, mem, pids) = (policy.cpu_seconds, policy.memory_mb, policy.max_pids);
+    // Build the seccomp program *before* fork (it allocates); apply it in `pre_exec`.
+    #[cfg(target_os = "linux")]
+    let seccomp_bpf: Option<Vec<libc::sock_filter>> = if policy.seccomp {
+        seccomp::build()
+    } else {
+        None
+    };
     unsafe {
         cmd.pre_exec(move || {
             let set = |res: u32, v: u64| {
@@ -88,6 +95,10 @@ fn install_rlimits(
                 if let Some((reads, writes)) = &landlock_paths {
                     apply_landlock(reads, writes).map_err(std::io::Error::other)?;
                 }
+                // Last: a wrong filter must not preempt the confinement above.
+                if let Some(bpf) = &seccomp_bpf {
+                    seccompiler::apply_filter(bpf).map_err(std::io::Error::other)?;
+                }
             }
             #[cfg(not(target_os = "linux"))]
             {
@@ -95,6 +106,59 @@ fn install_rlimits(
             }
             Ok(())
         });
+    }
+}
+
+/// A conservative seccomp deny-list: syscalls with no legitimate use inside a test run.
+/// Default-allow, so an ordinary gate is untouched; a denied call returns `EPERM` (not
+/// `SIGSYS`), so a probe fails gracefully and shows up in the audit. `ptrace` and
+/// `perf_event_open` are deliberately *not* here -- sanitizers and profilers use them,
+/// and `NO_NEW_PRIVS` already blunts ptrace's escalation value.
+#[cfg(target_os = "linux")]
+mod seccomp {
+    /// Syscalls present in `libc` on both x86_64 and aarch64 Linux.
+    fn denied() -> Vec<i64> {
+        vec![
+            libc::SYS_mount,
+            libc::SYS_umount2,
+            libc::SYS_pivot_root,
+            libc::SYS_swapon,
+            libc::SYS_swapoff,
+            libc::SYS_kexec_load,
+            libc::SYS_kexec_file_load,
+            libc::SYS_init_module,
+            libc::SYS_finit_module,
+            libc::SYS_delete_module,
+            libc::SYS_reboot,
+            libc::SYS_setns,
+            libc::SYS_add_key,
+            libc::SYS_keyctl,
+            libc::SYS_request_key,
+            libc::SYS_bpf,
+            libc::SYS_acct,
+            libc::SYS_settimeofday,
+            libc::SYS_clock_settime,
+            libc::SYS_adjtimex,
+        ]
+    }
+
+    /// The compiled BPF program, or `None` if seccompiler could not build it (e.g. an
+    /// unknown target arch) -- in which case the caller runs without this layer.
+    pub fn build() -> Option<Vec<libc::sock_filter>> {
+        use seccompiler::{SeccompAction, SeccompFilter};
+        use std::collections::BTreeMap;
+
+        let rules: BTreeMap<i64, Vec<seccompiler::SeccompRule>> =
+            denied().into_iter().map(|n| (n, vec![])).collect();
+        let arch = std::env::consts::ARCH.try_into().ok()?;
+        let filter = SeccompFilter::new(
+            rules,
+            SeccompAction::Allow,                     // default: allow
+            SeccompAction::Errno(libc::EPERM as u32), // on match: -EPERM
+            arch,
+        )
+        .ok()?;
+        filter.try_into().ok()
     }
 }
 
@@ -137,7 +201,12 @@ pub fn run(policy: &Policy, argv: &[String]) -> Result<RunResult> {
         Some((policy.allow_read.clone(), writes)),
     );
     let child = cmd.spawn().map_err(|e| anyhow!("spawn: {e}"))?;
-    wait_capped(child, policy.wall_seconds, "linux:landlock+rlimit+netns")
+    let backend = if policy.seccomp {
+        "linux:landlock+seccomp+rlimit+netns"
+    } else {
+        "linux:landlock+rlimit+netns"
+    };
+    wait_capped(child, policy.wall_seconds, backend)
 }
 
 // ---------------------------------------------------------------- macOS --------

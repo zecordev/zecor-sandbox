@@ -34,6 +34,10 @@ pub struct Policy {
     pub max_pids: Option<u64>,
     /// Working directory for the child. Also the implicit read+write root.
     pub workdir: Option<PathBuf>,
+    /// Install the Linux seccomp deny-list (kernel-module / mount / kexec / keyring /
+    /// clock / bpf / ...). Denied calls get `EPERM`, not `SIGKILL`. Default: true.
+    /// No effect off Linux.
+    pub seccomp: bool,
 }
 
 impl Default for Policy {
@@ -53,6 +57,7 @@ impl Default for Policy {
             wall_seconds: Some(3600),
             max_pids: Some(512),
             workdir: None,
+            seccomp: true,
         }
     }
 }
@@ -94,6 +99,7 @@ impl Policy {
                 "wall_seconds" => p.wall_seconds = val.parse().ok(),
                 "max_pids" => p.max_pids = val.parse().ok(),
                 "workdir" => p.workdir = Some(PathBuf::from(val)),
+                "seccomp" => p.seccomp = val != "false",
                 other => return Err(anyhow!("line {}: unknown directive {other:?}", n + 1)),
             }
         }
@@ -121,17 +127,18 @@ impl Policy {
     /// A human-readable description of what the active backend will enforce.
     pub fn describe(&self) -> String {
         let backend = if cfg!(target_os = "linux") {
-            "linux: landlock + seccomp + netns + rlimit"
+            let sc = if self.seccomp { "seccomp + " } else { "" };
+            format!("linux: landlock + {sc}netns + rlimit")
         } else if cfg!(target_os = "macos") {
-            "macos: sandbox-exec (SBPL) + rlimit"
+            "macos: sandbox-exec (SBPL) + rlimit".into()
         } else if cfg!(windows) {
-            "windows: job object (limits + kill-on-close)"
+            "windows: job object (limits + kill-on-close)".into()
         } else {
-            "portable: rlimit + env scrub + chdir"
+            "portable: rlimit + env scrub + chdir".into()
         };
         format!(
-            "{backend}\n  read:  {:?}\n  write: {:?}\n  net:   {}\n  caps:  cpu={:?}s mem={:?}MB wall={:?}s pids={:?}",
-            self.allow_read, self.allow_write, self.allow_net,
+            "{backend}\n  read:  {:?}\n  write: {:?}\n  net:   {}\n  seccomp: {}\n  caps:  cpu={:?}s mem={:?}MB wall={:?}s pids={:?}",
+            self.allow_read, self.allow_write, self.allow_net, self.seccomp,
             self.cpu_seconds, self.memory_mb, self.wall_seconds, self.max_pids
         )
     }
@@ -163,6 +170,15 @@ mod tests {
         let p = Policy::default();
         assert!(!p.allow_net && p.allow_write.is_empty());
         assert_eq!(p.memory_mb, Some(4096));
+        assert!(p.seccomp);
+    }
+
+    #[test]
+    fn seccomp_is_opt_out_via_policy() {
+        let p = Policy::from_toml("seccomp = false\n").unwrap();
+        assert!(!p.seccomp);
+        assert!(Policy::from_toml("seccomp = true\n").unwrap().seccomp);
+        assert!(p.describe().contains("seccomp: false"));
     }
 
     #[test]

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `zecor-sandbox` -- run a command under an isolation policy.
 //!
-//!   zecor-sandbox run  [--policy F] [--workdir D] [--allow-net] [--dry-run]
-//!                      [--audit FILE] -- CMD [ARGS...]
-//!   zecor-sandbox show [--policy F] [--workdir D] [--allow-net]
+//!   zecor-sandbox run  [--policy F] [--workdir D] [--allow-net] [--no-seccomp]
+//!                      [--dry-run] [--audit FILE] -- CMD [ARGS...]
+//!   zecor-sandbox show [--policy F] [--workdir D] [--allow-net] [--no-seccomp]
 //!
 //! `run` exits with the child's exit code (124 on a wall-clock timeout). `--dry-run`
 //! resolves the policy, prints the plan as JSON, and exits 0 without running anything.
@@ -30,6 +30,9 @@ fn main() {
     }
     if args.iter().any(|a| a == "--allow-net") {
         policy.allow_net = true;
+    }
+    if args.iter().any(|a| a == "--no-seccomp") {
+        policy.seccomp = false;
     }
     let dry_run = args.iter().any(|a| a == "--dry-run");
     let audit_path = flag(&args, "--audit");
@@ -76,7 +79,7 @@ fn main() {
         _ => {
             eprintln!(
                 "usage: zecor-sandbox <run [--policy F] [--workdir D] [--allow-net] \
-                 [--dry-run] [--audit FILE] -- CMD | show>"
+                 [--no-seccomp] [--dry-run] [--audit FILE] -- CMD | show>"
             );
             exit(2);
         }
