@@ -38,7 +38,7 @@ jobs:
           mkdir dist
           cp "target/${{ matrix.target }}/release/${bin}${ext}" "dist/${bin}-${{ matrix.target }}${ext}"
           (cd dist && sha256sum ./* > "${bin}-${{ matrix.target }}.sha256")
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}
           path: dist/*
