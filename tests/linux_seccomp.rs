@@ -8,11 +8,13 @@ use std::process::Command;
 
 const BIN: &str = env!("CARGO_BIN_EXE_zecor-sandbox");
 
-// SYS_keyctl = 250 on x86_64. KEYCTL_GET_KEYRING_ID = 0, KEY_SPEC_PROCESS_KEYRING = -2.
+// SYS_keyctl = 250 on x86_64. KEYCTL_GET_KEYRING_ID(KEY_SPEC_PROCESS_KEYRING, create=1)
+// returns the process keyring serial (>= 0) for any process -- unless seccomp blocks the
+// syscall, in which case it is -1 / EPERM.
 const PROBE: &str = r#"
 import ctypes, os
 libc = ctypes.CDLL(None, use_errno=True)
-r = libc.syscall(250, 0, -2, 0, 0, 0)
+r = libc.syscall(250, 0, -2, 1, 0, 0)
 print("KEYCTL_RC", r, os.strerror(ctypes.get_errno()) if r < 0 else "ok")
 "#;
 
@@ -62,8 +64,9 @@ fn no_seccomp_lets_keyctl_through() {
         return;
     }
     let (out, _) = run_probe(&["--no-seccomp"]);
+    // the syscall runs -- it must not come back as the seccomp EPERM
     assert!(
-        !out.contains("KEYCTL_RC -1"),
-        "keyctl should succeed without seccomp, got: {out}"
+        !out.contains("Operation not permitted"),
+        "keyctl syscall should reach the kernel without seccomp, got: {out}"
     );
 }
