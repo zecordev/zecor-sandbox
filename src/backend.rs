@@ -63,7 +63,7 @@ fn install_rlimits(
     let (cpu, mem, pids) = (policy.cpu_seconds, policy.memory_mb, policy.max_pids);
     // Build the seccomp program *before* fork (it allocates); apply it in `pre_exec`.
     #[cfg(target_os = "linux")]
-    let seccomp_bpf: Option<Vec<libc::sock_filter>> = if policy.seccomp {
+    let seccomp_bpf: Option<seccompiler::BpfProgram> = if policy.seccomp {
         seccomp::build()
     } else {
         None
@@ -97,7 +97,7 @@ fn install_rlimits(
                 }
                 // Last: a wrong filter must not preempt the confinement above.
                 if let Some(bpf) = &seccomp_bpf {
-                    seccompiler::apply_filter(bpf).map_err(std::io::Error::other)?;
+                    seccompiler::apply_filter(&bpf[..]).map_err(std::io::Error::other)?;
                 }
             }
             #[cfg(not(target_os = "linux"))]
@@ -144,8 +144,8 @@ mod seccomp {
 
     /// The compiled BPF program, or `None` if seccompiler could not build it (e.g. an
     /// unknown target arch) -- in which case the caller runs without this layer.
-    pub fn build() -> Option<Vec<libc::sock_filter>> {
-        use seccompiler::{SeccompAction, SeccompFilter};
+    pub fn build() -> Option<seccompiler::BpfProgram> {
+        use seccompiler::{BpfProgram, SeccompAction, SeccompFilter};
         use std::collections::BTreeMap;
 
         let rules: BTreeMap<i64, Vec<seccompiler::SeccompRule>> =
@@ -158,7 +158,8 @@ mod seccomp {
             arch,
         )
         .ok()?;
-        filter.try_into().ok()
+        let bpf: BpfProgram = filter.try_into().ok()?;
+        Some(bpf)
     }
 }
 
