@@ -1,0 +1,50 @@
+name: security
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny,cargo-audit
+      - run: cargo deny check advisories bans licenses sources
+      - run: cargo audit
+
+  workflows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: reviewdog/action-actionlint@v1
+        with:
+          reporter: github-check
+          fail_level: error
+      - name: zizmor
+        continue-on-error: true
+        run: pipx install zizmor && zizmor --persona=regular .github/workflows
+
+  osv-scanner:
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.0.2
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    with:
+      scan-args: |-
+        --config=osv-scanner.toml
+        --recursive
+        ./
